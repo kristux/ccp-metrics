@@ -62,6 +62,6 @@ func writeInfluxDB(metrics map[string]*metric, influxConnection *client.Client, 
 
 	_, err := influxConnection.Write(pointsBatch)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 }

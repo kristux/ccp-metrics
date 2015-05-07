@@ -1,6 +1,9 @@
 package main
 
-import "sort"
+import (
+	"sort"
+	"strconv"
+)
 
 func gaugeHandler(receivedMetric metric) {
 	_, ok := metrics[receivedMetric.Metric]
@@ -37,6 +40,36 @@ func counterHandler(receivedMetric metric) {
 	}
 
 }
+
+func setHandler(receivedMetric metric) {
+	_, ok := metrics[receivedMetric.Metric]
+
+	if !ok {
+		metrics[receivedMetric.Metric] = &receivedMetric
+		metrics[receivedMetric.Metric].Fields = make(map[string]interface{})
+		//metrics[receivedMetric.Metric].Fields["items"] = make([]float64, 1)
+	}
+
+	// var set []float64
+	// set = metrics[receivedMetric.Metric].Fields["items"].([]float64)
+	// found := false
+	//
+	// for i := 0; i < len(set); i++ {
+	// 	if set[i] == receivedMetric.Value {
+	// 		found = true
+	// 		break
+	// 	}
+	// }
+
+	// if !found {
+	// 	set = append(set, receivedMetric.Value)
+	// }
+
+	k := strconv.FormatFloat(float64(receivedMetric.Value), 'f', 2, 32)
+
+	metrics[receivedMetric.Metric].Fields[k] = receivedMetric.Value
+}
+
 func histogramHandler(receivedMetric metric) {
 
 	_, ok := metrics[receivedMetric.Metric]
@@ -77,6 +110,8 @@ func histogramHandler(receivedMetric metric) {
 
 func registerHandlers() {
 	handlers["gauge"] = gaugeHandler
+	handlers["gauge"] = gaugeHandler
+	handlers["set"] = setHandler
 	handlers["counter"] = counterHandler
 	handlers["histogram"] = histogramHandler
 }

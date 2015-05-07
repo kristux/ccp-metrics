@@ -46,17 +46,3 @@ class CCPMetrics(object):
             })
 
         http_serv.request('POST', '/metrics', output)
-        print output
-
-import random
-
-for i in range(10000):
-    tags = dict()
-    tags["a"] = "1"
-    tags["b"] = "2"
-    metrics = CCPMetrics("localhost", 8082)
-    metrics.gauge("foo1", random.randint(0, i/5), tags)
-    metrics.histogram("bar1", random.randint(0, i/5), tags)
-
-    if i % 3 == 0:
-            time.sleep(0.05)

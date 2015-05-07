@@ -62,8 +62,15 @@ func aggregate() {
 					continue
 				}
 
+				_, ok := metrics[receivedMetric.Metric]
+
+				if !ok {
+					receivedMetric.Tags = make(map[string]string)
+				}
+
 				//update tags
 				//this results in the aggregated metric having the tags from the last metric
+				//maybe not best, think about alternative approaches
 				for k, v := range receivedMetric.Tags {
 					metrics[receivedMetric.Metric].Tags[k] = v
 				}
