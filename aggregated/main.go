@@ -50,39 +50,24 @@ func aggregate() {
 			flush()
 
 		case receivedMetric := <-in:
-
-			if receivedMetric.Metric == "" {
-				fmt.Println("Invalid Name")
-				continue
-			} else if receivedMetric.Timestamp == "" {
-				fmt.Println("Invalid timestamp")
-				continue
-			} else if receivedMetric.Type == "" {
-				fmt.Println("Invalid Type")
-				continue
-			}
-
-			// oldMetric := metrics[receivedMetric.Metric]
-			// found := false
-			//
-			// _, ok := metrics[receivedMetric.Metric]
-
-			// if ok {
-			// 	for _, newTag := range receivedMetric.Tags {
-			// 		for _, oldTag := range oldMetric.Tags {
-			// 			if newTag == oldTag {
-			// 				found = true
-			// 			}
-			// 		}
-			// 		if !found {
-			// 			oldMetric.Tags = append(oldMetric.Tags, newTag)
-			// 		}
-			// 	}
-			// }
-
-			//if handler exists, call it.
-			//ensures no exception occurs due to malformed metrics
+			//if a handler exists to aggregate the metric, do so
+			//otherwise ignore the metric
 			if handler, ok := handlers[receivedMetric.Type]; ok {
+
+				if receivedMetric.Timestamp == "" {
+					fmt.Println("Invalid timestamp")
+					continue
+				} else if receivedMetric.Type == "" {
+					fmt.Println("Invalid Type")
+					continue
+				}
+
+				//update tags
+				//this results in the aggregated metric having the tags from the last metric
+				for k, v := range receivedMetric.Tags {
+					metrics[receivedMetric.Metric].Tags[k] = v
+				}
+
 				handler(receivedMetric)
 			}
 		}
