@@ -35,20 +35,25 @@ func configureInfluxDB(config influxDBConfig) client.Client {
 	return *influxConnection
 }
 
-func writeInfluxDB(metrics map[string]*metric, influxConnection *client.Client, config influxDBConfig) {
+func writeInfluxDB(buckets map[string]*bucket, influxConnection *client.Client, config influxDBConfig) {
 	var (
-		points      = make([]client.Point, len(metrics))
+		points      = make([]client.Point, len(buckets))
 		pointsIndex = 0
 	)
 
-	for k := range metrics {
-		metric := metrics[k]
-		timestamp, _ := time.Parse("YYYY-MM-DD HH:MM:SS.mmm", metric.Timestamp)
+	for k := range buckets {
+		bucket := buckets[k]
+		timestamp, _ := time.Parse("YYYY-MM-DD HH:MM:SS.mmm", bucket.Timestamp)
+
+		fmt.Println(bucket.Name)
+		fmt.Println(bucket.Tags)
+		fmt.Println(bucket.Fields)
+		fmt.Println(timestamp)
 
 		points[pointsIndex] = client.Point{
-			Name:      metric.Metric,
-			Tags:      metric.Tags,
-			Fields:    metric.Fields,
+			Name:      bucket.Name,
+			Tags:      bucket.Tags,
+			Fields:    bucket.Fields,
 			Timestamp: timestamp,
 		}
 		pointsIndex++

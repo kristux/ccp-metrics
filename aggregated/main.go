@@ -10,19 +10,34 @@ import (
 	"github.com/spf13/viper"
 )
 
-//rather than having buckets, the metric struct is used to represent
-//both incoming metrics and aggregated metrics
 type metric struct {
-	Metric    string
+	Name      string
 	Host      string
 	Timestamp string
-	Service   string
 	Type      string
 	Value     float64
 	Sampling  float64
 	Tags      map[string]string
+}
+
+type bucket struct {
+	Name      string
+	Timestamp string
+	Tags      map[string]string
 	Values    []float64 //used for histograms
 	Fields    map[string]interface{}
+}
+
+type event struct {
+	Name           string
+	Text           string
+	Host           string
+	AggregationKey string
+	Priority       string
+	Timestamp      string
+	AlertType      string
+	Tags           map[string]string
+	Fields         map[string]interface{}
 }
 
 type influxDBConfig struct {
@@ -34,12 +49,12 @@ type influxDBConfig struct {
 }
 
 var (
-	metrics       = make(map[string]*metric)
-	in            = make(chan metric, 10000)
-	out           = make(chan metric, 10000)
+	metricsIn     = make(chan metric, 10000)
+	eventsIn      = make(chan event, 10000)
 	flushInterval = 10 //flag.Int64("flush-interval", 10, "Flush interval")
-	handlers      = make(map[string]func(metric))
+	aggregators   = make(map[string]func(metric))
 	influxConfig  influxDBConfig
+	buckets       = make(map[string]*bucket)
 )
 
 func aggregate() {
@@ -49,10 +64,10 @@ func aggregate() {
 		case <-t.C:
 			flush()
 
-		case receivedMetric := <-in:
+		case receivedMetric := <-metricsIn:
 			//if a handler exists to aggregate the metric, do so
 			//otherwise ignore the metric
-			if handler, ok := handlers[receivedMetric.Type]; ok {
+			if handler, ok := aggregators[receivedMetric.Type]; ok {
 
 				if receivedMetric.Timestamp == "" {
 					fmt.Println("Invalid timestamp")
@@ -62,17 +77,20 @@ func aggregate() {
 					continue
 				}
 
-				_, ok := metrics[receivedMetric.Metric]
+				_, ok := buckets[receivedMetric.Name]
 
 				if !ok {
-					receivedMetric.Tags = make(map[string]string)
+					buckets[receivedMetric.Name] = new(bucket)
+					buckets[receivedMetric.Name].Name = receivedMetric.Name
+					buckets[receivedMetric.Name].Fields = make(map[string]interface{})
+					buckets[receivedMetric.Name].Tags = make(map[string]string)
 				}
 
 				//update tags
 				//this results in the aggregated metric having the tags from the last metric
 				//maybe not best, think about alternative approaches
 				for k, v := range receivedMetric.Tags {
-					metrics[receivedMetric.Metric].Tags[k] = v
+					buckets[receivedMetric.Name].Tags[k] = v
 				}
 
 				handler(receivedMetric)
@@ -83,10 +101,10 @@ func aggregate() {
 
 //write metrics to InfluxDB
 func flush() {
-	if len(metrics) > 0 {
-		connection := configureInfluxDB(influxConfig)
-		writeInfluxDB(metrics, &connection, influxConfig)
-		metrics = make(map[string]*metric)
+	if len(buckets) > 0 {
+		client := configureInfluxDB(influxConfig)
+		writeInfluxDB(buckets, &client, influxConfig)
+		buckets = make(map[string]*bucket)
 	}
 
 }
@@ -98,7 +116,19 @@ func receiveMetric(response http.ResponseWriter, request *http.Request) {
 	err := decoder.Decode(&receivedMetric)
 
 	if err == nil {
-		in <- receivedMetric
+		metricsIn <- receivedMetric
+	} else {
+		fmt.Println(err)
+	}
+}
+
+func receiveEvent(response http.ResponseWriter, request *http.Request) {
+	decoder := json.NewDecoder(request.Body)
+	var receivedEvent event
+	err := decoder.Decode(&receivedEvent)
+
+	if err == nil {
+		eventsIn <- receivedEvent
 	} else {
 		fmt.Println(err)
 	}
@@ -121,8 +151,10 @@ func main() {
 		influxDatabase: viper.GetString("influxDatabase"),
 	}
 
-	registerHandlers()
+	registerAggregators()
 	go aggregate()
 	http.HandleFunc("/metrics", receiveMetric)
+	http.HandleFunc("/events", receiveEvent)
+
 	log.Fatal(http.ListenAndServe(":8082", nil))
 }

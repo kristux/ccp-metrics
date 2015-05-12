@@ -35,7 +35,7 @@ class CCPMetrics(object):
         hostname = gethostname()
 
         output = json.dumps({
-            "metric": metric,
+            "name": metric,
             "host": hostname,
             "timestamp": strftime("%a, %d %b %Y %H:%M:%S +0000", gmtime()),
             "type": metric_type,

@@ -5,22 +5,24 @@ import (
 	"strconv"
 )
 
-func gaugeHandler(receivedMetric metric) {
-	_, ok := metrics[receivedMetric.Metric]
+func gaugeAggregator(receivedMetric metric) {
+	_, ok := buckets[receivedMetric.Name].Fields["gauge"]
 
 	if !ok {
-		metrics[receivedMetric.Metric] = &receivedMetric
-		metrics[receivedMetric.Metric].Fields = make(map[string]interface{})
-	} else {
-		metrics[receivedMetric.Metric].Value += receivedMetric.Value
-		metrics[receivedMetric.Metric].Timestamp = receivedMetric.Timestamp
-		metrics[receivedMetric.Metric].Fields["gauge"] = metrics[receivedMetric.Metric].Value
-
+		buckets[receivedMetric.Name].Fields["gauge"] = 0
 	}
+
+	buckets[receivedMetric.Name].Timestamp = receivedMetric.Timestamp
+	buckets[receivedMetric.Name].Fields["gauge"] = receivedMetric.Value
+
 }
 
-func counterHandler(receivedMetric metric) {
-	_, ok := metrics[receivedMetric.Metric]
+func counterAggregator(receivedMetric metric) {
+	_, ok := buckets[receivedMetric.Name].Fields["counter"]
+
+	if !ok {
+		buckets[receivedMetric.Name].Fields["counter"] = 0.0
+	}
 
 	//to avoid the metric being lost, if sampling is undefined set it to 1
 	//unless the client is misbehaving, this shouldn't happen
@@ -28,63 +30,24 @@ func counterHandler(receivedMetric metric) {
 		receivedMetric.Sampling = 1
 	}
 
-	if !ok {
-		metrics[receivedMetric.Metric] = &receivedMetric
-		metrics[receivedMetric.Metric].Value *= 1 / receivedMetric.Sampling
-		metrics[receivedMetric.Metric].Fields = make(map[string]interface{})
-		metrics[receivedMetric.Metric].Fields["counter"] = metrics[receivedMetric.Metric].Value
-	} else {
-		metrics[receivedMetric.Metric].Value += receivedMetric.Value * (1 / receivedMetric.Sampling)
-		metrics[receivedMetric.Metric].Timestamp = receivedMetric.Timestamp
-
-	}
-
+	//updating the value is broken down into several lines in order to make dealing
+	//with type coersion easier
+	sampledValue := receivedMetric.Value * (1 / receivedMetric.Sampling)
+	previousValue := buckets[receivedMetric.Name].Fields["counter"].(float64)
+	buckets[receivedMetric.Name].Fields["counter"] = sampledValue + previousValue
+	buckets[receivedMetric.Name].Timestamp = receivedMetric.Timestamp
 }
 
-func setHandler(receivedMetric metric) {
-	_, ok := metrics[receivedMetric.Metric]
-
-	if !ok {
-		metrics[receivedMetric.Metric] = &receivedMetric
-		metrics[receivedMetric.Metric].Fields = make(map[string]interface{})
-		//metrics[receivedMetric.Metric].Fields["items"] = make([]float64, 1)
-	}
-
-	// var set []float64
-	// set = metrics[receivedMetric.Metric].Fields["items"].([]float64)
-	// found := false
-	//
-	// for i := 0; i < len(set); i++ {
-	// 	if set[i] == receivedMetric.Value {
-	// 		found = true
-	// 		break
-	// 	}
-	// }
-
-	// if !found {
-	// 	set = append(set, receivedMetric.Value)
-	// }
-
+func setAggregator(receivedMetric metric) {
 	k := strconv.FormatFloat(float64(receivedMetric.Value), 'f', 2, 32)
-
-	metrics[receivedMetric.Metric].Fields[k] = receivedMetric.Value
+	buckets[receivedMetric.Name].Fields[k] = receivedMetric.Value
 }
 
-func histogramHandler(receivedMetric metric) {
-
-	_, ok := metrics[receivedMetric.Metric]
-
-	if !ok {
-		metrics[receivedMetric.Metric] = &receivedMetric
-		metrics[receivedMetric.Metric].Fields = make(map[string]interface{})
-	}
-
-	histogram := metrics[receivedMetric.Metric]
-
+func histogramAggregator(receivedMetric metric) {
+	histogram := buckets[receivedMetric.Name]
 	histogram.Timestamp = receivedMetric.Timestamp
 	histogram.Values = append(histogram.Values, receivedMetric.Value)
 	sort.Float64s(histogram.Values)
-
 	count := float64(len(histogram.Values))
 
 	total := 0.0
@@ -108,10 +71,10 @@ func histogramHandler(receivedMetric metric) {
 
 }
 
-func registerHandlers() {
-	handlers["gauge"] = gaugeHandler
-	handlers["gauge"] = gaugeHandler
-	handlers["set"] = setHandler
-	handlers["counter"] = counterHandler
-	handlers["histogram"] = histogramHandler
+func registerAggregators() {
+	aggregators["gauge"] = gaugeAggregator
+	aggregators["gauge"] = gaugeAggregator
+	aggregators["set"] = setAggregator
+	aggregators["counter"] = counterAggregator
+	aggregators["histogram"] = histogramAggregator
 }
