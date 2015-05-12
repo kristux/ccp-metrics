@@ -223,7 +223,9 @@ func main() {
 		influxDatabase: viper.GetString("influxDatabase"),
 	}
 
-	flushInterval = viper.GetString("flushInterval")
+	viper.SetDefault("flushInterval", 10)
+	flushInterval = viper.GetInt("flushInterval")
+
 	registerAggregators()
 	go aggregate()
 	http.HandleFunc("/metrics", receiveMetric)

@@ -1,2 +1,6 @@
 
 aggregated/aggregated.json
+
+*.py
+
+*.swp
