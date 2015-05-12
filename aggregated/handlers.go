@@ -14,7 +14,6 @@ func gaugeAggregator(receivedMetric metric) {
 
 	buckets[receivedMetric.Name].Timestamp = receivedMetric.Timestamp
 	buckets[receivedMetric.Name].Fields["gauge"] = receivedMetric.Value
-
 }
 
 func counterAggregator(receivedMetric metric) {

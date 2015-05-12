@@ -24,7 +24,7 @@ type bucket struct {
 	Name      string
 	Timestamp string
 	Tags      map[string]string
-	Values    []float64 //used for histograms
+	Values    []float64 //intermediate values for histograms, only fields are sent to influxdb
 	Fields    map[string]interface{}
 }
 
@@ -37,7 +37,18 @@ type event struct {
 	Timestamp      string
 	AlertType      string
 	Tags           map[string]string
-	Fields         map[string]interface{}
+	SourceType     string
+}
+
+//eventKey is used as the key in the map of events, this is needed as
+//the datadog docs specify that events are aggregated based on
+//‘hostname/event_type/source_type/aggregation_key’ and therefore
+//a single string key is insuffient to refer to events
+type eventKey struct {
+	Name           string
+	Host           string
+	SourceType     string
+	AggregationKey string
 }
 
 type influxDBConfig struct {
@@ -55,6 +66,7 @@ var (
 	aggregators   = make(map[string]func(metric))
 	influxConfig  influxDBConfig
 	buckets       = make(map[string]*bucket)
+	events        = make(map[eventKey]*bucket)
 )
 
 func aggregate() {
@@ -67,18 +79,21 @@ func aggregate() {
 		case receivedMetric := <-metricsIn:
 			//if a handler exists to aggregate the metric, do so
 			//otherwise ignore the metric
+			if receivedMetric.Name == "" {
+				fmt.Println("Invalid metric name")
+				continue
+			} else if receivedMetric.Timestamp == "" {
+				fmt.Println("Invalid timestamp")
+				continue
+			} else if receivedMetric.Type == "" {
+				fmt.Println("Invalid Type")
+				continue
+			}
+
 			if handler, ok := aggregators[receivedMetric.Type]; ok {
-
-				if receivedMetric.Timestamp == "" {
-					fmt.Println("Invalid timestamp")
-					continue
-				} else if receivedMetric.Type == "" {
-					fmt.Println("Invalid Type")
-					continue
-				}
-
 				_, ok := buckets[receivedMetric.Name]
 
+				//if bucket doesn't exist, create one
 				if !ok {
 					buckets[receivedMetric.Name] = new(bucket)
 					buckets[receivedMetric.Name].Name = receivedMetric.Name
@@ -86,7 +101,7 @@ func aggregate() {
 					buckets[receivedMetric.Name].Tags = make(map[string]string)
 				}
 
-				//update tags
+				//aggregate tags
 				//this results in the aggregated metric having the tags from the last metric
 				//maybe not best, think about alternative approaches
 				for k, v := range receivedMetric.Tags {
@@ -95,17 +110,71 @@ func aggregate() {
 
 				handler(receivedMetric)
 			}
+
+		case receivedEvent := <-eventsIn:
+			if receivedEvent.Name == "" {
+				fmt.Println("Invalid event title")
+				continue
+			} else if receivedEvent.Timestamp == "" {
+				fmt.Println("Invalid timestamp")
+				continue
+			} else if receivedEvent.Text == "" {
+				fmt.Println("Invalid Type")
+				continue
+			}
+
+			foo := new(eventKey)
+			key := *foo
+			key.SourceType = receivedEvent.SourceType
+			key.Host = receivedEvent.Host
+			key.Name = receivedEvent.Name
+			key.AggregationKey = receivedEvent.AggregationKey
+			//key := eventKey{receivedEvent.Name, receivedEvent.Host, receivedEvent.SourceType, receivedEvent.AggregationKey}
+
+			_, ok := events[key]
+
+			if !ok {
+				events[key] = new(bucket)
+				events[key].Name = receivedEvent.Name
+				events[key].Fields = make(map[string]interface{})
+				events[key].Tags = make(map[string]string)
+			}
+
+			events[key].Fields["name"] = receivedEvent.Name
+			events[key].Fields["text"] = receivedEvent.Text
+			events[key].Fields["host"] = receivedEvent.Host
+			events[key].Fields["aggregation_key"] = receivedEvent.AggregationKey
+			events[key].Fields["priority"] = receivedEvent.Priority
+			events[key].Fields["alert_type"] = receivedEvent.AlertType
+
+			events[key].Timestamp = receivedEvent.Timestamp
+
+			for k, v := range receivedEvent.Tags {
+				events[key].Tags[k] = v
+			}
 		}
 	}
 }
 
-//write metrics to InfluxDB
 func flush() {
+	client := configureInfluxDB(influxConfig)
+	var bucketArray []bucket
+
 	if len(buckets) > 0 {
-		client := configureInfluxDB(influxConfig)
-		writeInfluxDB(buckets, &client, influxConfig)
-		buckets = make(map[string]*bucket)
+		for _, v := range buckets {
+			bucketArray = append(bucketArray, *v)
+		}
 	}
+
+	if len(events) > 0 {
+		for _, v := range events {
+			bucketArray = append(bucketArray, *v)
+		}
+	}
+
+	writeInfluxDB(bucketArray, &client, influxConfig)
+	buckets = make(map[string]*bucket)
+	events = make(map[eventKey]*bucket)
 
 }
 
@@ -118,6 +187,7 @@ func receiveMetric(response http.ResponseWriter, request *http.Request) {
 	if err == nil {
 		metricsIn <- receivedMetric
 	} else {
+		fmt.Println("error parsing metric")
 		fmt.Println(err)
 	}
 }
@@ -129,7 +199,9 @@ func receiveEvent(response http.ResponseWriter, request *http.Request) {
 
 	if err == nil {
 		eventsIn <- receivedEvent
+
 	} else {
+		fmt.Println("error parsing event")
 		fmt.Println(err)
 	}
 }
@@ -151,6 +223,7 @@ func main() {
 		influxDatabase: viper.GetString("influxDatabase"),
 	}
 
+	flushInterval = viper.GetString("flushInterval")
 	registerAggregators()
 	go aggregate()
 	http.HandleFunc("/metrics", receiveMetric)

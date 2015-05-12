@@ -35,7 +35,7 @@ func configureInfluxDB(config influxDBConfig) client.Client {
 	return *influxConnection
 }
 
-func writeInfluxDB(buckets map[string]*bucket, influxConnection *client.Client, config influxDBConfig) {
+func writeInfluxDB(buckets []bucket, influxConnection *client.Client, config influxDBConfig) {
 	var (
 		points      = make([]client.Point, len(buckets))
 		pointsIndex = 0
@@ -46,9 +46,7 @@ func writeInfluxDB(buckets map[string]*bucket, influxConnection *client.Client, 
 		timestamp, _ := time.Parse("YYYY-MM-DD HH:MM:SS.mmm", bucket.Timestamp)
 
 		fmt.Println(bucket.Name)
-		fmt.Println(bucket.Tags)
 		fmt.Println(bucket.Fields)
-		fmt.Println(timestamp)
 
 		points[pointsIndex] = client.Point{
 			Name:      bucket.Name,
@@ -67,6 +65,7 @@ func writeInfluxDB(buckets map[string]*bucket, influxConnection *client.Client, 
 
 	_, err := influxConnection.Write(pointsBatch)
 	if err != nil {
+		fmt.Println("Error writing to db")
 		fmt.Println(err)
 	}
 }
