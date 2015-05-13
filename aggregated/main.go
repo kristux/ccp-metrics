@@ -212,10 +212,12 @@ func receiveEvent(response http.ResponseWriter, request *http.Request) {
 }
 
 func main() {
-	var config = flag.String("config", "./aggregated", "configuration file")
+	var (
+		config = flag.String("config", "./aggregated", "configuration file")
+		port   = flag.String("port", "8082", "Port to listen on for metrics and events, default 8082")
+	)
 
 	viper.SetConfigName(*config)
-
 	err := viper.ReadInConfig()
 
 	if err != nil {
@@ -238,5 +240,5 @@ func main() {
 	http.HandleFunc("/metrics", receiveMetric)
 	http.HandleFunc("/events", receiveEvent)
 
-	log.Fatal(http.ListenAndServe(":8082", nil))
+	log.Fatal(http.ListenAndServe(":"+*port, nil))
 }
