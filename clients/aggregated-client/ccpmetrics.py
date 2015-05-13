@@ -6,7 +6,6 @@ import json
 from socket import gethostname
 from time import gmtime, strftime
 
-
 class CCPMetrics(object):
     def __init__(self, host, port, service=None):
         self.host = host
@@ -32,8 +31,8 @@ class CCPMetrics(object):
         self._write_metric(metric, value, "set", tags, sample_rate)
 
     def event(self, title, text, alert_type=None, aggregation_key=None,
-              source_type_name=None, date_happened=None, priority=None,
-              tags=None, hostname=None):
+              source_type_name=None, priority=None,
+              tags=None, hostname=None, date_happened=None):
 
         http_serv = httplib.HTTPConnection(self.host, self.port)
 
@@ -51,8 +50,7 @@ class CCPMetrics(object):
 
         http_serv.request('POST', '/events', output)
 
-    def _write_metric(self, metric, value, metric_type,
-                        tags=[], sample_rate=1):
+    def _write_metric(self, metric, value, metric_type, tags=[], sample_rate=1):
 
         http_serv = httplib.HTTPConnection(self.host, self.port)
         hostname = gethostname()

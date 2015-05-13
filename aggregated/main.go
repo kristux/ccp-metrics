@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -75,84 +76,88 @@ func aggregate() {
 		select {
 		case <-t.C:
 			flush()
-
 		case receivedMetric := <-metricsIn:
-			//if a handler exists to aggregate the metric, do so
-			//otherwise ignore the metric
-			if receivedMetric.Name == "" {
-				fmt.Println("Invalid metric name")
-				continue
-			} else if receivedMetric.Timestamp == "" {
-				fmt.Println("Invalid timestamp")
-				continue
-			} else if receivedMetric.Type == "" {
-				fmt.Println("Invalid Type")
-				continue
-			}
-
-			if handler, ok := aggregators[receivedMetric.Type]; ok {
-				_, ok := buckets[receivedMetric.Name]
-
-				//if bucket doesn't exist, create one
-				if !ok {
-					buckets[receivedMetric.Name] = new(bucket)
-					buckets[receivedMetric.Name].Name = receivedMetric.Name
-					buckets[receivedMetric.Name].Fields = make(map[string]interface{})
-					buckets[receivedMetric.Name].Tags = make(map[string]string)
-				}
-
-				//aggregate tags
-				//this results in the aggregated metric having the tags from the last metric
-				//maybe not best, think about alternative approaches
-				for k, v := range receivedMetric.Tags {
-					buckets[receivedMetric.Name].Tags[k] = v
-				}
-
-				handler(receivedMetric)
-			}
-
+			processMetric(receivedMetric)
 		case receivedEvent := <-eventsIn:
-			if receivedEvent.Name == "" {
-				fmt.Println("Invalid event title")
-				continue
-			} else if receivedEvent.Timestamp == "" {
-				fmt.Println("Invalid timestamp")
-				continue
-			} else if receivedEvent.Text == "" {
-				fmt.Println("Invalid Type")
-				continue
-			}
-
-			foo := new(eventKey)
-			key := *foo
-			key.SourceType = receivedEvent.SourceType
-			key.Host = receivedEvent.Host
-			key.Name = receivedEvent.Name
-			key.AggregationKey = receivedEvent.AggregationKey
-			//key := eventKey{receivedEvent.Name, receivedEvent.Host, receivedEvent.SourceType, receivedEvent.AggregationKey}
-
-			_, ok := events[key]
-
-			if !ok {
-				events[key] = new(bucket)
-				events[key].Name = receivedEvent.Name
-				events[key].Fields = make(map[string]interface{})
-				events[key].Tags = make(map[string]string)
-			}
-
-			events[key].Fields["name"] = receivedEvent.Name
-			events[key].Fields["text"] = receivedEvent.Text
-			events[key].Fields["host"] = receivedEvent.Host
-			events[key].Fields["aggregation_key"] = receivedEvent.AggregationKey
-			events[key].Fields["priority"] = receivedEvent.Priority
-			events[key].Fields["alert_type"] = receivedEvent.AlertType
-
-			events[key].Timestamp = receivedEvent.Timestamp
-
-			for k, v := range receivedEvent.Tags {
-				events[key].Tags[k] = v
-			}
+			processEvent(receivedEvent)
 		}
+	}
+}
+
+func processMetric(receivedMetric metric) {
+	//if a handler exists to aggregate the metric, do so
+	//otherwise ignore the metric
+	if receivedMetric.Name == "" {
+		fmt.Println("Invalid metric name")
+		return
+	} else if receivedMetric.Timestamp == "" {
+		fmt.Println("Invalid timestamp")
+		return
+	} else if receivedMetric.Type == "" {
+		fmt.Println("Invalid Type")
+		return
+	}
+
+	if handler, ok := aggregators[receivedMetric.Type]; ok {
+		_, ok := buckets[receivedMetric.Name]
+
+		//if bucket doesn't exist, create one
+		if !ok {
+			buckets[receivedMetric.Name] = new(bucket)
+			buckets[receivedMetric.Name].Name = receivedMetric.Name
+			buckets[receivedMetric.Name].Fields = make(map[string]interface{})
+			buckets[receivedMetric.Name].Tags = make(map[string]string)
+		}
+
+		//aggregate tags
+		//this results in the aggregated metric having the tags from the last metric
+		//maybe not best, think about alternative approaches
+		for k, v := range receivedMetric.Tags {
+			buckets[receivedMetric.Name].Tags[k] = v
+		}
+
+		handler(receivedMetric)
+	}
+}
+
+func processEvent(receivedEvent event) {
+	if receivedEvent.Name == "" {
+		fmt.Println("Invalid event title")
+		return
+	} else if receivedEvent.Timestamp == "" {
+		fmt.Println("Invalid timestamp")
+		return
+	} else if receivedEvent.Text == "" {
+		fmt.Println("Invalid Type")
+		return
+	}
+
+	key := *(new(eventKey))
+	key.SourceType = receivedEvent.SourceType
+	key.Host = receivedEvent.Host
+	key.Name = receivedEvent.Name
+	key.AggregationKey = receivedEvent.AggregationKey
+
+	_, ok := events[key]
+
+	if !ok {
+		events[key] = new(bucket)
+		events[key].Name = receivedEvent.Name
+		events[key].Fields = make(map[string]interface{})
+		events[key].Tags = make(map[string]string)
+	}
+
+	events[key].Fields["name"] = receivedEvent.Name
+	events[key].Fields["text"] = receivedEvent.Text
+	events[key].Fields["host"] = receivedEvent.Host
+	events[key].Fields["aggregation_key"] = receivedEvent.AggregationKey
+	events[key].Fields["priority"] = receivedEvent.Priority
+	events[key].Fields["alert_type"] = receivedEvent.AlertType
+
+	events[key].Timestamp = receivedEvent.Timestamp
+
+	for k, v := range receivedEvent.Tags {
+		events[key].Tags[k] = v
 	}
 }
 
@@ -207,7 +212,9 @@ func receiveEvent(response http.ResponseWriter, request *http.Request) {
 }
 
 func main() {
-	viper.SetConfigName("aggregated")
+	var config = flag.String("config", "./aggregated", "configuration file")
+
+	viper.SetConfigName(*config)
 
 	err := viper.ReadInConfig()
 
